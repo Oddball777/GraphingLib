@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import curve_fit
+from scipy.interpolate import interp1d
 
 from .data_plotting_1d import Curve, Scatter
 from .graph_elements import Point
@@ -83,7 +84,8 @@ class GeneralFit(Curve):
         self._line_style = line_style
         self._alpha = alpha
 
-        self._function: Callable[[np.ndarray], np.ndarray]
+        # Fit functions can be called with scalars or arrays and return scalars or arrays.
+        self._function: Callable[[float | np.ndarray], float | np.ndarray]
 
         self._setup_attributes()
 
@@ -119,7 +121,7 @@ class GeneralFit(Curve):
         self._curve_to_be_fit = curve
 
     @property
-    def function(self) -> Callable[[np.ndarray], np.ndarray]:
+    def function(self) -> Callable[[float | np.ndarray], float | np.ndarray]:
         return self._function
 
     def __str__(self) -> str:
@@ -128,12 +130,34 @@ class GeneralFit(Curve):
         """
         raise NotImplementedError()
 
-    def get_coordinates_at_x(self, x: float) -> tuple[float, float]:
-        return (x, self._function(x))
+    def get_coordinates_at_x(
+        self, x: float, interpolation_method: str | None = None
+    ) -> tuple[float, float]:
+        """
+        Return (x, y) on the fit at ``x``.
+
+        Parameters
+        ----------
+        x : float
+            x value of the point.
+        interpolation_method : str | None, optional
+            If ``None`` (default), evaluate the analytic fit function directly.
+            If a string, interpolate between the fit's sampled ``_x_data`` and
+            ``_y_data`` using ``scipy.interpolate.interp1d`` with the given
+            kind.
+        """
+        if interpolation_method is None:
+            y = self._function(x)
+        else:
+            y = interp1d(
+                self._x_data, self._y_data, kind=interpolation_method, fill_value="extrapolate"
+            )(x)
+        return (x, float(np.asarray(y)))
 
     def create_point_at_x(
         self,
         x: float,
+        interpolation_method: str | None = None,
         label: str | None = None,
         face_color: str = "default",
         edge_color: str = "default",
@@ -149,6 +173,10 @@ class GeneralFit(Curve):
         ----------
         x : float
             x value of the point.
+        interpolation_method : str | None, optional
+            ``None`` (default) evaluates the analytic fit. Any string performs
+            interpolation between this fit's sampled ``_x_data``/``_y_data`` using
+            ``scipy.interpolate.interp1d`` with the given kind.
         label : str, optional
             Label to be displayed in the legend.
         face_color : str
@@ -174,9 +202,10 @@ class GeneralFit(Curve):
         -------
         :class:`~graphinglib.graph_elements.Point` object on the curve at the given x value.
         """
+        y = self.get_coordinates_at_x(x, interpolation_method)[1]
         return Point(
             x,
-            self._function(x),
+            y,
             label=label,
             face_color=face_color,
             edge_color=edge_color,
@@ -194,7 +223,7 @@ class GeneralFit(Curve):
     def create_points_at_y(
         self,
         y: float,
-        interpolation_kind: str = "linear",
+        interpolation_method: str = "linear",
         label: str | None = None,
         face_color: str = "default",
         edge_color: str = "default",
@@ -210,9 +239,9 @@ class GeneralFit(Curve):
         ----------
         y : float
             y value of the point.
-        interpolation_kind : str
-            Kind of interpolation to be used.
-            Default is "linear".
+        interpolation_method : str
+            Kind of interpolation to be used for computing x values at this y.
+            Defaults to "linear".
         label : str, optional
             Label to be displayed in the legend.
         face_color : str
@@ -239,7 +268,7 @@ class GeneralFit(Curve):
         list[:class:`~graphinglib.graph_elements.Point`]
             List of :class:`~graphinglib.graph_elements.Point` objects on the curve at the given y value.
         """
-        coord_pairs = self.get_coordinates_at_y(y, interpolation_kind)
+        coord_pairs = self.get_coordinates_at_y(y, interpolation_method)
         points = [
             Point(
                 coord[0],
