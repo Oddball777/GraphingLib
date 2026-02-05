@@ -1,3 +1,5 @@
+from typing import Any, Literal, Optional, Protocol, Sequence, cast, runtime_checkable
+
 from matplotlib.artist import Artist
 from matplotlib.collections import LineCollection
 from matplotlib.colors import is_color_like
@@ -5,11 +7,10 @@ from matplotlib.legend import Legend
 from matplotlib.legend_handler import HandlerLineCollection
 from matplotlib.lines import Line2D
 from matplotlib.markers import MarkerStyle
-from matplotlib.patches import Polygon, Patch
+from matplotlib.patches import Patch, Polygon
 from matplotlib.transforms import Transform
 from matplotlib.typing import ColorType
 from numpy import array, full_like
-from typing import Any, Literal, Optional, Protocol, Sequence, runtime_checkable
 
 
 class HandlerMultipleLines(HandlerLineCollection):
@@ -30,23 +31,30 @@ class HandlerMultipleLines(HandlerLineCollection):
         fontsize: float,
         trans: Transform,
     ) -> list[Line2D]:
-        numlines = len(orig_handle.get_segments())
+        handle = cast(LineCollection, orig_handle)
+        numlines = len(handle.get_segments())
         xdata, _ = self.get_xdata(legend, xdescent, ydescent, width, height, fontsize)
         lines = []
         ydata = full_like(xdata, height / (numlines + 1))
         for i in range(numlines):
             line = Line2D(xdata, ydata * (numlines - i) - ydescent)
-            self.update_prop(line, orig_handle, legend)
+            self.update_prop(line, handle, legend)
+            colors = handle.get_colors()
+            if isinstance(colors, Sequence) and not isinstance(colors, (str, bytes)):
+                color = colors[i] if i < len(colors) else colors[0]
+            else:
+                color = colors
+            color = cast(ColorType, color)
+            dashes_info = cast(Any, handle).get_dashes()
             try:
-                color = orig_handle.get_colors()[i]
+                dash_entry = dashes_info[i]
             except IndexError:
-                color = orig_handle.get_colors()[0]
-            try:
-                dashes = orig_handle.get_dashes()[i]
-            except IndexError:
-                dashes = orig_handle.get_dashes()[0]
-            if dashes[1] is not None:
-                line.set_dashes(dashes[1])
+                dash_entry = dashes_info[0]
+            dash_pattern = dash_entry[1]
+            if isinstance(dash_pattern, Sequence) and not isinstance(
+                dash_pattern, (str, bytes)
+            ):
+                line.set_dashes(cast(Sequence[float], dash_pattern))
             line.set_color(color)
             line.set_transform(trans)
             line.set_linewidth(2)
@@ -72,23 +80,30 @@ class HandlerMultipleVerticalLines(HandlerLineCollection):
         fontsize: float,
         trans: Transform,
     ) -> list[Line2D]:
-        numlines = len(orig_handle.get_segments())
+        handle = cast(LineCollection, orig_handle)
+        numlines = len(handle.get_segments())
         lines = []
         xdata = array([width / (numlines + 1), width / (numlines + 1)])
         ydata = array([0, height])
         for i in range(numlines):
             line = Line2D(xdata * (numlines - i) - xdescent, ydata - ydescent)
-            self.update_prop(line, orig_handle, legend)
+            self.update_prop(line, handle, legend)
+            colors = handle.get_colors()
+            if isinstance(colors, Sequence) and not isinstance(colors, (str, bytes)):
+                color = colors[i] if i < len(colors) else colors[0]
+            else:
+                color = colors
+            color = cast(ColorType, color)
+            dashes_info = cast(Any, handle).get_dashes()
             try:
-                color = orig_handle.get_colors()[i]
+                dash_entry = dashes_info[i]
             except IndexError:
-                color = orig_handle.get_colors()[0]
-            try:
-                dashes = orig_handle.get_dashes()[i]
-            except IndexError:
-                dashes = orig_handle.get_dashes()[0]
-            if dashes[1] is not None:
-                line.set_dashes(dashes[1])
+                dash_entry = dashes_info[0]
+            dash_pattern = dash_entry[1]
+            if isinstance(dash_pattern, Sequence) and not isinstance(
+                dash_pattern, (str, bytes)
+            ):
+                line.set_dashes(cast(Sequence[float], dash_pattern))
             line.set_color(color)
             line.set_transform(trans)
             line.set_linewidth(2)
@@ -161,7 +176,7 @@ class LegendElement(Protocol):
             raise ValueError("Alpha value must be between 0 and 1.")
         self._alpha = value
 
-    def _color_setter(self, attr: str, value: ColorType) -> None:
+    def _color_setter(self, attr: str, value: ColorType | None) -> None:
         if value is not None:
             if not is_color_like(value):
                 raise ValueError(f"'{value}' is not a valid color.")
@@ -231,6 +246,13 @@ class LegendLine(LegendElement):
         Defaults to ``1.0``.
     """
 
+    _label: str
+    _color: ColorType
+    _gap_color: ColorType | None
+    _line_width: float
+    _line_style: Literal["-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"] | tuple[float, Sequence]
+    _alpha: float
+
     def __init__(
         self,
         label: str,
@@ -275,11 +297,11 @@ class LegendLine(LegendElement):
         self._color_setter("color", value)
 
     @property
-    def gap_color(self) -> ColorType:
+    def gap_color(self) -> ColorType | None:
         return self._gap_color
 
     @gap_color.setter
-    def gap_color(self, value: ColorType) -> None:
+    def gap_color(self, value: ColorType | None) -> None:
         self._color_setter("gap_color", value)
 
     @property
@@ -347,6 +369,16 @@ class LegendMarker(LegendElement):
         Defaults to ``1.0``.
     """
 
+    _label: str
+    _face_color: ColorType | None
+    _face_color_alt: ColorType | None
+    _edge_color: ColorType | None
+    _edge_width: float
+    _marker_size: float
+    _marker_style: Any
+    _fill_style: Literal["full", "left", "right", "bottom", "top"]
+    _alpha: float
+
     def __init__(
         self,
         label: str,
@@ -396,27 +428,27 @@ class LegendMarker(LegendElement):
         )
 
     @property
-    def face_color(self) -> ColorType:
+    def face_color(self) -> ColorType | None:
         return self._face_color
 
     @face_color.setter
-    def face_color(self, value: ColorType) -> None:
+    def face_color(self, value: ColorType | None) -> None:
         self._color_setter("face_color", value)
 
     @property
-    def face_color_alt(self) -> ColorType:
+    def face_color_alt(self) -> ColorType | None:
         return self._face_color_alt
 
     @face_color_alt.setter
-    def face_color_alt(self, value: ColorType) -> None:
+    def face_color_alt(self, value: ColorType | None) -> None:
         self._color_setter("face_color_alt", value)
 
     @property
-    def edge_color(self) -> ColorType:
+    def edge_color(self) -> ColorType | None:
         return self._edge_color
 
     @edge_color.setter
-    def edge_color(self, value: ColorType) -> None:
+    def edge_color(self, value: ColorType | None) -> None:
         self._color_setter("edge_color", value)
 
     @property
@@ -493,6 +525,14 @@ class LegendPatch(LegendElement):
         Defaults to ``1.0``.
     """
 
+    _label: str
+    _face_color: ColorType | None
+    _edge_color: ColorType | None
+    _line_width: float
+    _line_style: Literal["-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"] | tuple[float, Sequence]
+    _hatch: Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None
+    _alpha: float
+
     def __init__(
         self,
         label: str,
@@ -503,7 +543,7 @@ class LegendPatch(LegendElement):
             "-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"
         ]
         | tuple[float, Sequence] = "-",
-        hatch: Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] = None,
+        hatch: Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None = None,
         alpha: float = 1.0,
     ) -> None:
         self.label = label
@@ -531,19 +571,19 @@ class LegendPatch(LegendElement):
         )
 
     @property
-    def face_color(self) -> ColorType:
+    def face_color(self) -> ColorType | None:
         return self._face_color
 
     @face_color.setter
-    def face_color(self, value: ColorType) -> None:
+    def face_color(self, value: ColorType | None) -> None:
         self._color_setter("face_color", value)
 
     @property
-    def edge_color(self) -> ColorType:
+    def edge_color(self) -> ColorType | None:
         return self._edge_color
 
     @edge_color.setter
-    def edge_color(self, value: ColorType) -> None:
+    def edge_color(self, value: ColorType | None) -> None:
         self._color_setter("edge_color", value)
 
     @property
@@ -572,12 +612,12 @@ class LegendPatch(LegendElement):
         self._line_style_setter("line_style", value)
 
     @property
-    def hatch(self) -> Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]:
+    def hatch(self) -> Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None:
         return self._hatch
 
     @hatch.setter
     def hatch(
-        self, value: Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"]
+        self, value: Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None
     ) -> None:
         if value is not None:
             # This logic is adapted from matplotlib's hatch validation
