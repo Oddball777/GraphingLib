@@ -2,26 +2,25 @@ from __future__ import annotations
 
 from shutil import which
 from typing import Any, Literal, Optional
-
-from cycler import Cycler
 from warnings import warn
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from cycler import Cycler
 from matplotlib.collections import LineCollection
 from matplotlib.legend_handler import HandlerPatch
 from matplotlib.patches import Polygon
 
 from .file_manager import FileLoader, FileUpdater, get_default_style
 from .graph_elements import GraphingException, Plottable
-
-RcParamValue = str | float | int | bool | Cycler | list[str]
 from .legend_artists import (
     HandlerMultipleLines,
     HandlerMultipleVerticalLines,
     VerticalLineCollection,
     histogram_legend_artist,
 )
+
+RcParamValue = str | float | int | bool | Cycler | list[str]
 
 
 class Figure:
