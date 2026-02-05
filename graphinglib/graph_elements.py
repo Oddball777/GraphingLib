@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from difflib import get_close_matches
-from typing import Literal, Optional, Protocol, runtime_checkable
+from typing import Any, Literal, Optional, Protocol, runtime_checkable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,6 +27,13 @@ class Plottable(Protocol):
     .. attention:: Not to be used directly.
 
     """
+
+    label: str | None
+    handle: Any
+
+    def _plot_element(
+        self, axes: plt.Axes, z_order: int, *, cycle_color: str | None = None
+    ) -> None: ...
 
     def copy_with(self, **kwargs) -> Self:
         """
