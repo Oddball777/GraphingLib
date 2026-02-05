@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import shapely as sh
+import shapely.affinity as sh_affinity
 import shapely.ops as ops
 from matplotlib.patches import Polygon as MPLPolygon
 from shapely import LineString
@@ -181,12 +184,32 @@ class Arrow(Plottable):
             self._style = "<|-|>"
         else:
             self._style = "-|>"
-        head_length, head_width = self._head_size * 0.4, self._head_size * 0.2
+        head_size = self._head_size
+        if isinstance(head_size, str):
+            raise ValueError(
+                "Arrow head_size is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+        head_length, head_width = head_size * 0.4, head_size * 0.2
+
+        width = self._width
+        if isinstance(width, str):
+            raise ValueError(
+                "Arrow width is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        alpha = self._alpha
+        if isinstance(alpha, str):
+            raise ValueError(
+                "Arrow alpha is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
         props = {
             "arrowstyle": f"{self._style}, head_width={head_width}, head_length={head_length}",
             "color": self._color,
-            "linewidth": self._width,
-            "alpha": self._alpha,
+            "linewidth": width,
+            "alpha": alpha,
         }
         if self._shrink != 0:
             shrinkPointA, shrinkPointB = self._shrink_points()
@@ -285,7 +308,7 @@ class Line(Plottable):
         self._color = value
 
     @property
-    def width(self) -> float:
+    def width(self) -> float | Literal["default"]:
         return self._width
 
     @width.setter
@@ -301,7 +324,7 @@ class Line(Plottable):
         self._capped_line = value
 
     @property
-    def cap_width(self) -> float:
+    def cap_width(self) -> float | Literal["default"]:
         return self._cap_width
 
     @cap_width.setter
@@ -309,7 +332,7 @@ class Line(Plottable):
         self._cap_width = value
 
     @property
-    def alpha(self) -> float:
+    def alpha(self) -> float | Literal["default"]:
         return self._alpha
 
     @alpha.setter
@@ -322,16 +345,37 @@ class Line(Plottable):
         """
         return deepcopy(self)
 
-    def _plot_element(self, axes: plt.axes, z_order: int, **kwargs):
+    def _plot_element(self, axes: plt.Axes, z_order: int, **kwargs):
+        cap_width = self._cap_width
+        if isinstance(cap_width, str):
+            raise ValueError(
+                "Line cap_width is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        width = self._width
+        if isinstance(width, str):
+            raise ValueError(
+                "Line width is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        alpha = self._alpha
+        if isinstance(alpha, str):
+            raise ValueError(
+                "Line alpha is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
         if self._capped_line:
-            style = f"|-|, widthA={self._cap_width / 2}, widthB={self._cap_width / 2}"
+            style = f"|-|, widthA={cap_width / 2}, widthB={cap_width / 2}"
         else:
             style = "-"
         props = {
             "arrowstyle": style,
             "color": self._color,
-            "linewidth": self._width,
-            "alpha": self._alpha,
+            "linewidth": width,
+            "alpha": alpha,
         }
         axes.annotate(
             "",
@@ -369,7 +413,7 @@ class Polygon(Plottable):
     def __init__(
         self,
         vertices: list[tuple[float, float]],
-        fill: bool = "default",
+        fill: bool | Literal["default"] = "default",
         edge_color: str = "default",
         fill_color: str = "default",
         line_width: float | Literal["default"] = "default",
@@ -477,7 +521,7 @@ class Polygon(Plottable):
         """
         return Point(*self.get_centroid_coordinates())
 
-    def create_intersection(self, other: Self, copy_style: bool = False) -> Self:
+    def create_intersection(self, other: Self, copy_style: bool = False) -> Polygon:
         """
         Returns the intersection of the polygon with another polygon.
 
@@ -502,7 +546,7 @@ class Polygon(Plottable):
                 list(self._sh_polygon.intersection(other._sh_polygon).exterior.coords)
             )
 
-    def create_union(self, other: Self, copy_style: bool = False) -> Self:
+    def create_union(self, other: Self, copy_style: bool = False) -> Polygon:
         """
         Returns the union of the polygon with another polygon.
 
@@ -527,7 +571,7 @@ class Polygon(Plottable):
                 list(self._sh_polygon.union(other._sh_polygon).exterior.coords)
             )
 
-    def create_difference(self, other: Self, copy_style: bool = False) -> Self:
+    def create_difference(self, other: Self, copy_style: bool = False) -> Polygon:
         """
         Returns the difference of the polygon with another polygon.
 
@@ -554,7 +598,7 @@ class Polygon(Plottable):
 
     def create_symmetric_difference(
         self, other: Self, copy_style: bool = False
-    ) -> list[Self]:
+    ) -> list[Polygon]:
         """
         Returns the symmetric difference of the polygon with another polygon.
 
@@ -577,7 +621,7 @@ class Polygon(Plottable):
             new_poly._sh_polygon = self._sh_polygon.symmetric_difference(
                 other._sh_polygon
             )
-            return new_poly
+            return [new_poly]
         else:
             multi_poly = self._sh_polygon.symmetric_difference(other._sh_polygon)
             if multi_poly.geom_type == "MultiPolygon":
@@ -587,7 +631,7 @@ class Polygon(Plottable):
             else:
                 return [Polygon(list(multi_poly.exterior.coords))]
 
-    def translate(self, dx: float, dy: float) -> Self | None:
+    def translate(self, dx: float, dy: float) -> None:
         """
         Translates the polygon by the specified amount.
 
@@ -598,14 +642,14 @@ class Polygon(Plottable):
         dy : float
             The amount to move the polygon in the y direction.
         """
-        self._sh_polygon = sh.affinity.translate(self._sh_polygon, xoff=dx, yoff=dy)
+        self._sh_polygon = sh_affinity.translate(self._sh_polygon, xoff=dx, yoff=dy)
 
     def rotate(
         self,
         angle: float,
         center: Optional[tuple[float, float]] = None,
         use_rad: bool = False,
-    ) -> Self:
+    ) -> None:
         """
         Rotates the polygon by the specified angle.
 
@@ -622,7 +666,7 @@ class Polygon(Plottable):
             center = self.get_centroid_coordinates()
 
         # Use shapely.affinity.rotate to rotate the polygon
-        self._sh_polygon = sh.affinity.rotate(
+        self._sh_polygon = sh_affinity.rotate(
             self._sh_polygon, angle, origin=center, use_radians=use_rad
         )
 
@@ -631,7 +675,7 @@ class Polygon(Plottable):
         x_scale: float,
         y_scale: float,
         center: Optional[tuple[float, float]] = None,
-    ) -> Self:
+    ) -> None:
         """
         Scales the polygon by the specified factors.
 
@@ -648,7 +692,7 @@ class Polygon(Plottable):
             center = self.get_centroid_coordinates()
 
         # Use shapely.affinity.scale to scale the polygon
-        self._sh_polygon = sh.affinity.scale(
+        self._sh_polygon = sh_affinity.scale(
             self._sh_polygon, xfact=x_scale, yfact=y_scale, origin=center
         )
 
@@ -658,7 +702,7 @@ class Polygon(Plottable):
         y_skew: float,
         center: Optional[tuple[float, float]] = None,
         use_rad: bool = False,
-    ) -> Self:
+    ) -> None:
         """
         Skews the polygon by the specified factors.
 
@@ -677,11 +721,11 @@ class Polygon(Plottable):
             center = self.get_centroid_coordinates()
 
         # Use shapely.affinity.skew to skew the polygon
-        self._sh_polygon = sh.affinity.skew(
+        self._sh_polygon = sh_affinity.skew(
             self._sh_polygon, xs=x_skew, ys=y_skew, origin=center, use_radians=use_rad
         )
 
-    def split(self, curve: Curve, copy_style: bool = False) -> list[Self]:
+    def split(self, curve: Curve, copy_style: bool = False) -> list[Polygon]:
         """
         Splits the polygon by a curve.
 
@@ -704,7 +748,9 @@ class Polygon(Plottable):
         split_sh_polygons = [
             p.simplify(0.001 * p.length) for p in list(split_sh_polygons.geoms)
         ]
-        polygons = [Polygon(list(p.exterior.coords)) for p in split_sh_polygons]
+        polygons: list[Polygon] = [
+            Polygon(list(p.exterior.coords)) for p in split_sh_polygons
+        ]
         if copy_style:
             for polygon in polygons:
                 polygon._fill = self._fill
@@ -715,7 +761,7 @@ class Polygon(Plottable):
                 polygon._fill_alpha = self._fill_alpha
         return polygons
 
-    def linear_transformation(self, matrix: np.ndarray) -> Self:
+    def linear_transformation(self, matrix: np.ndarray) -> None:
         """
         Applies a transformation matrix to the polygon.
 
@@ -776,26 +822,70 @@ class Polygon(Plottable):
             raise TypeError("The other object must be a Polygon or a Curve")
 
     def _plot_element(self, axes: plt.Axes, z_order: int, **kwargs):
+        fill = self._fill
+        if isinstance(fill, str):
+            raise ValueError(
+                "Polygon fill is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        fill_alpha = self._fill_alpha
+        if isinstance(fill_alpha, str):
+            raise ValueError(
+                "Polygon fill_alpha is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        line_width = self._line_width
+        if isinstance(line_width, str):
+            raise ValueError(
+                "Polygon line_width is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        line_style = self._line_style
+        if line_style == "default":
+            raise ValueError(
+                "Polygon line_style is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        fill_color = self._fill_color
+        if fill_color == "default":
+            raise ValueError(
+                "Polygon fill_color is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
+        edge_color = self._edge_color
+        if edge_color == "default":
+            raise ValueError(
+                "Polygon edge_color is still set to 'default' when plotting;"
+                " resolve style parameters before rendering."
+            )
+
         # Create a polygon patch for the fill
-        if self._fill:
-            kwargs = {
-                "alpha": self._fill_alpha,
+        if fill:
+            fill_kwargs: dict[str, Any] = {
+                "closed": True,
+                "alpha": fill_alpha,
                 "zorder": z_order,
             }
-            if self._fill_color is not None:
-                kwargs["facecolor"] = self._fill_color
-            polygon_fill = MPLPolygon(self.vertices, **kwargs)
+            if fill_color is not None:
+                fill_kwargs["facecolor"] = fill_color
+            polygon_fill = MPLPolygon(self.vertices, **fill_kwargs)
             axes.add_patch(polygon_fill)
         # Create a polygon patch for the edge
-        if self._edge_color is not None:
-            kwargs = {
-                "fill": None,
-                "linewidth": self._line_width,
-                "linestyle": self._line_style,
-                "edgecolor": self._edge_color,
+        if edge_color is not None:
+            edge_kwargs: dict[str, Any] = {
+                "closed": True,
+                "fill": False,
+                "linewidth": line_width,
+                "linestyle": line_style,
+                "edgecolor": edge_color,
                 "zorder": z_order,
             }
-            polygon_edge = MPLPolygon(self.vertices, **kwargs)
+            polygon_edge = MPLPolygon(self.vertices, **edge_kwargs)
             axes.add_patch(polygon_edge)
 
 
@@ -839,7 +929,7 @@ class Circle(Polygon):
         x_center: float,
         y_center: float,
         radius: float,
-        fill: bool = "default",
+        fill: bool | Literal["default"] = "default",
         fill_color: str = "default",
         edge_color: str = "default",
         line_width: float | Literal["default"] = "default",
@@ -951,7 +1041,7 @@ class Ellipse(Polygon):
         x_radius: float,
         y_radius: float,
         angle: float = 0,
-        fill: bool = "default",
+        fill: bool | Literal["default"] = "default",
         fill_color: str = "default",
         edge_color: str = "default",
         line_width: float | Literal["default"] = "default",
@@ -976,14 +1066,14 @@ class Ellipse(Polygon):
         self._sh_polygon = sh.geometry.Point(x_center, y_center).buffer(
             1, number_of_points // 4
         )
-        self._sh_polygon = sh.affinity.scale(
+        self._sh_polygon = sh_affinity.scale(
             self._sh_polygon,
             xfact=x_radius,
             yfact=y_radius,
             origin=(x_center, y_center),
         )
         if angle != 0:
-            self._sh_polygon = sh.affinity.rotate(
+            self._sh_polygon = sh_affinity.rotate(
                 self._sh_polygon, angle, origin=(x_center, y_center)
             )
 
@@ -1001,14 +1091,14 @@ class Ellipse(Polygon):
         self._sh_polygon = sh.geometry.Point(x_center, y_center).buffer(
             1, self._num_points // 4
         )
-        self._sh_polygon = sh.affinity.scale(
+        self._sh_polygon = sh_affinity.scale(
             self._sh_polygon,
             xfact=x_radius,
             yfact=y_radius,
             origin=(x_center, y_center),
         )
         if angle != 0:
-            self._sh_polygon = sh.affinity.rotate(
+            self._sh_polygon = sh_affinity.rotate(
                 self._sh_polygon, angle, origin=(x_center, y_center)
             )
 
@@ -1127,7 +1217,7 @@ class Rectangle(Polygon):
         y_bottom_left: float,
         width: float,
         height: float,
-        fill: bool = "default",
+        fill: bool | Literal["default"] = "default",
         fill_color: str = "default",
         edge_color: str = "default",
         line_width: float | Literal["default"] = "default",
@@ -1237,7 +1327,7 @@ class Rectangle(Polygon):
         y: float,
         width: float,
         height: float,
-        fill: bool = "default",
+        fill: bool | Literal["default"] = "default",
         fill_color: str = "default",
         edge_color: str = "default",
         line_width: float | Literal["default"] = "default",
