@@ -3,12 +3,11 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from difflib import get_close_matches
-from typing import Any, Literal, Optional, Protocol, runtime_checkable
+from typing import Any, Literal, Optional, Protocol, Sequence, cast, runtime_checkable
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from matplotlib.figure import Figure as MPLFigure
 from numpy.typing import ArrayLike
 
 from .legend_artists import VerticalLineCollection
@@ -158,7 +157,7 @@ class Hlines(Plottable):
         x_max: Optional[ArrayLike] = None,
         label: Optional[str] = None,
         colors: list[str] | str = "default",
-        line_widths: list[float] | float = "default",
+        line_widths: list[float] | float | Literal["default"] = "default",
         line_styles: list[str] | str = "default",
         alpha: float | Literal["default"] = "default",
     ) -> None:
@@ -264,11 +263,13 @@ class Hlines(Plottable):
         self._colors = colors
 
     @property
-    def line_widths(self) -> list[float] | float:
+    def line_widths(self) -> list[float] | float | Literal["default"]:
         return self._line_widths
 
     @line_widths.setter
-    def line_widths(self, line_widths: list[float] | float) -> None:
+    def line_widths(
+        self, line_widths: list[float] | float | Literal["default"]
+    ) -> None:
         self._line_widths = line_widths
 
     @property
@@ -294,78 +295,174 @@ class Hlines(Plottable):
         Plots the element in the specified
         `Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html>`_.
         """
+        colors = cast(str | list[str] | np.ndarray, self._colors)
+        if colors == "default":
+            raise ValueError(
+                "Hlines colors is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        if isinstance(colors, np.ndarray):
+            colors = colors.tolist()
+        colors = cast(str | list[str], colors)
+
+        line_styles = cast(str | list[str] | np.ndarray, self._line_styles)
+        if line_styles == "default":
+            raise ValueError(
+                "Hlines line_styles is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        if isinstance(line_styles, np.ndarray):
+            line_styles = line_styles.tolist()
+        line_styles = cast(str | list[str], line_styles)
+
+        line_widths = cast(float | list[float] | np.ndarray, self._line_widths)
+        if line_widths == "default":
+            raise ValueError(
+                "Hlines line_widths is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        if isinstance(line_widths, np.ndarray):
+            line_widths = line_widths.tolist()
+        line_widths = cast(float | list[float], line_widths)
+
+        alpha_value = self._alpha
+        if alpha_value == "default":
+            raise ValueError(
+                "Hlines alpha is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        alpha: float = float(alpha_value)
+
+        y_values: list[float] = [
+            float(v) for v in np.atleast_1d(np.asarray(self._y, dtype=float))
+        ]
+        y_len = len(y_values)
+        x_min_values: list[float] | None = (
+            [float(v) for v in np.atleast_1d(np.asarray(self._x_min, dtype=float))]
+            if self._x_min is not None
+            else None
+        )
+        x_max_values: list[float] | None = (
+            [float(v) for v in np.atleast_1d(np.asarray(self._x_max, dtype=float))]
+            if self._x_max is not None
+            else None
+        )
+
+        def _select(value: list[Any] | tuple[Any, ...], idx: int):
+            return value[idx]
+
+        def _pick(seq: Sequence[float], idx: int) -> float:
+            return seq[idx] if len(seq) > 1 else seq[0]
+
         if isinstance(self._y, (list, np.ndarray)) and len(self._y) > 1:
             if self._x_max is not None and self._x_min is not None:
-                params = {
-                    "colors": self._colors,
-                    "linestyles": self._line_styles,
-                    "linewidths": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                axes.hlines(
-                    self._y,
-                    self._x_min,
-                    self._x_max,
-                    zorder=z_order,
-                    **params,
-                )
-                params.pop("linewidths")
-            else:
-                params = {
-                    "color": self._colors,
-                    "linestyle": self._line_styles,
-                    "linewidth": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                for i in range(len(self._y)):
-                    axes.axhline(
-                        self._y[i],
+                assert x_min_values is not None
+                assert x_max_values is not None
+                y_seq = cast(Sequence[float], y_values)
+                xmin_seq = cast(Sequence[float], x_min_values)
+                xmax_seq = cast(Sequence[float], x_max_values)
+                for i, y_val in enumerate(y_seq):
+                    axes.hlines(
+                        y_val,
+                        _pick(xmin_seq, i),
+                        _pick(xmax_seq, i),
                         zorder=z_order,
-                        **{
-                            k: v if isinstance(v, (int, float, str)) else v[i]
-                            for k, v in params.items()
-                        },
+                        colors=_select(colors, i)
+                        if isinstance(colors, (list, tuple))
+                        else colors,
+                        linestyles=_select(line_styles, i)
+                        if isinstance(line_styles, (list, tuple))
+                        else line_styles,
+                        linewidths=_select(line_widths, i)
+                        if isinstance(line_widths, (list, tuple))
+                        else line_widths,
+                        alpha=alpha,
                     )
-                params.pop("linewidth")
-            self.handle = LineCollection(
-                [[(0, 0)]] * (len(self._y) if len(self._y) <= 3 else 3),
-                **params,
-            )
+                self.handle = LineCollection(
+                    [[(0, 0)]] * (y_len if y_len <= 3 else 3),
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
+                )
+            else:
+                for i, y_val in enumerate(y_values):
+                    axes.axhline(
+                        y_val,
+                        zorder=z_order,
+                        color=_select(colors, i)
+                        if isinstance(colors, (list, tuple))
+                        else colors,
+                        linestyle=_select(line_styles, i)
+                        if isinstance(line_styles, (list, tuple))
+                        else line_styles,
+                        linewidth=_select(line_widths, i)
+                        if isinstance(line_widths, (list, tuple))
+                        else line_widths,
+                        alpha=alpha,
+                    )
+                self.handle = LineCollection(
+                    [[(0, 0)]] * (y_len if y_len <= 3 else 3),
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
+                )
         else:
             if self._x_max is not None and self._x_min is not None:
-                params = {
-                    "colors": self._colors,
-                    "linestyles": self._line_styles,
-                    "linewidths": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                axes.hlines(
-                    self._y,
-                    self._x_min,
-                    self._x_max,
-                    zorder=z_order,
-                    **params,
+                assert x_min_values is not None
+                assert x_max_values is not None
+                y_seq = cast(Sequence[float], y_values)
+                xmin_seq = cast(Sequence[float], x_min_values)
+                xmax_seq = cast(Sequence[float], x_max_values)
+                color_single = colors[0] if isinstance(colors, list) else colors
+                linestyle_single = (
+                    line_styles[0] if isinstance(line_styles, list) else line_styles
                 )
-                params.pop("linewidths")
+                linewidth_single = (
+                    line_widths[0] if isinstance(line_widths, list) else line_widths
+                )
+                axes.hlines(
+                    y_seq[0],
+                    xmin_seq[0],
+                    xmax_seq[0],
+                    zorder=z_order,
+                    colors=color_single,
+                    linestyles=linestyle_single,
+                    linewidths=linewidth_single,
+                    alpha=alpha,
+                )
             else:
-                params = {
-                    "color": self._colors,
-                    "linestyle": self._line_styles,
-                    "linewidth": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                axes.axhline(self._y, zorder=z_order, **params)
-                params.pop("linewidth")
+                color_single = colors[0] if isinstance(colors, list) else colors
+                linestyle_single = (
+                    line_styles[0] if isinstance(line_styles, list) else line_styles
+                )
+                linewidth_single = (
+                    line_widths[0] if isinstance(line_widths, list) else line_widths
+                )
+                axes.axhline(
+                    y_values[0],
+                    zorder=z_order,
+                    color=color_single,
+                    linestyle=linestyle_single,
+                    linewidth=linewidth_single,
+                    alpha=alpha,
+                )
             if isinstance(self._y, (int, float)):
-                self.handle = LineCollection([[(0, 0)]] * 1, **params)
+                self.handle = LineCollection(
+                    [[(0, 0)]] * 1,
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
+                )
             else:
                 self.handle = LineCollection(
-                    [[(0, 0)]] * (len(self._y) if len(self._y) <= 3 else 3),
-                    **params,
+                    [[(0, 0)]] * (y_len if y_len <= 3 else 3),
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
                 )
 
 
@@ -409,7 +506,7 @@ class Vlines(Plottable):
         y_max: Optional[ArrayLike] = None,
         label: Optional[str] = None,
         colors: list[str] | str = "default",
-        line_widths: list[float] | float = "default",
+        line_widths: list[float] | float | Literal["default"] = "default",
         line_styles: list[str] | str = "default",
         alpha: float | Literal["default"] = "default",
     ) -> None:
@@ -511,11 +608,13 @@ class Vlines(Plottable):
         self._colors = colors
 
     @property
-    def line_widths(self) -> list[float] | float:
+    def line_widths(self) -> list[float] | float | Literal["default"]:
         return self._line_widths
 
     @line_widths.setter
-    def line_widths(self, line_widths: list[float] | float) -> None:
+    def line_widths(
+        self, line_widths: list[float] | float | Literal["default"]
+    ) -> None:
         self._line_widths = line_widths
 
     @property
@@ -545,78 +644,174 @@ class Vlines(Plottable):
         Plots the element in the specified
         `Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html>`_.
         """
+        colors = cast(str | list[str] | np.ndarray, self._colors)
+        if colors == "default":
+            raise ValueError(
+                "Vlines colors is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        if isinstance(colors, np.ndarray):
+            colors = colors.tolist()
+        colors = cast(str | list[str], colors)
+
+        line_styles = cast(str | list[str] | np.ndarray, self._line_styles)
+        if line_styles == "default":
+            raise ValueError(
+                "Vlines line_styles is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        if isinstance(line_styles, np.ndarray):
+            line_styles = line_styles.tolist()
+        line_styles = cast(str | list[str], line_styles)
+
+        line_widths = cast(float | list[float] | np.ndarray, self._line_widths)
+        if line_widths == "default":
+            raise ValueError(
+                "Vlines line_widths is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        if isinstance(line_widths, np.ndarray):
+            line_widths = line_widths.tolist()
+        line_widths = cast(float | list[float], line_widths)
+
+        alpha_value = self._alpha
+        if alpha_value == "default":
+            raise ValueError(
+                "Vlines alpha is still set to 'default' when plotting; "
+                "resolve style parameters before rendering."
+            )
+        alpha: float = float(alpha_value)
+
+        x_values: list[float] = [
+            float(v) for v in np.atleast_1d(np.asarray(self._x, dtype=float))
+        ]
+        x_len = len(x_values)
+        y_min_values: list[float] | None = (
+            [float(v) for v in np.atleast_1d(np.asarray(self._y_min, dtype=float))]
+            if self._y_min is not None
+            else None
+        )
+        y_max_values: list[float] | None = (
+            [float(v) for v in np.atleast_1d(np.asarray(self._y_max, dtype=float))]
+            if self._y_max is not None
+            else None
+        )
+
+        def _select(value: list[Any] | tuple[Any, ...], idx: int):
+            return value[idx]
+
+        def _pick(seq: Sequence[float], idx: int) -> float:
+            return seq[idx] if len(seq) > 1 else seq[0]
+
         if isinstance(self._x, (list, np.ndarray)) and len(self._x) > 1:
             if self._y_min is not None and self._y_max is not None:
-                params = {
-                    "colors": self._colors,
-                    "linestyles": self._line_styles,
-                    "linewidths": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                axes.vlines(
-                    self._x,
-                    self._y_min,
-                    self._y_max,
-                    zorder=z_order,
-                    **params,
-                )
-                params.pop("linewidths")
-            else:
-                params = {
-                    "color": self._colors,
-                    "linestyle": self._line_styles,
-                    "linewidth": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                for i in range(len(self._x)):
-                    axes.axvline(
-                        self._x[i],
+                assert y_min_values is not None
+                assert y_max_values is not None
+                x_seq = cast(Sequence[float], x_values)
+                ymin_seq = cast(Sequence[float], y_min_values)
+                ymax_seq = cast(Sequence[float], y_max_values)
+                for i, x_val in enumerate(x_seq):
+                    axes.vlines(
+                        x_val,
+                        _pick(ymin_seq, i),
+                        _pick(ymax_seq, i),
                         zorder=z_order,
-                        **{
-                            k: v if isinstance(v, (int, float, str)) else v[i]
-                            for k, v in params.items()
-                        },
+                        colors=_select(colors, i)
+                        if isinstance(colors, (list, tuple))
+                        else colors,
+                        linestyles=_select(line_styles, i)
+                        if isinstance(line_styles, (list, tuple))
+                        else line_styles,
+                        linewidths=_select(line_widths, i)
+                        if isinstance(line_widths, (list, tuple))
+                        else line_widths,
+                        alpha=alpha,
                     )
-                params.pop("linewidth")
-            self.handle = VerticalLineCollection(
-                [[(0, 0)]] * (len(self._x) if len(self._x) <= 4 else 4),
-                **params,
-            )
+                self.handle = VerticalLineCollection(
+                    [[(0, 0)]] * (x_len if x_len <= 4 else 4),
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
+                )
+            else:
+                for i, x_val in enumerate(x_values):
+                    axes.axvline(
+                        x_val,
+                        zorder=z_order,
+                        color=_select(colors, i)
+                        if isinstance(colors, (list, tuple))
+                        else colors,
+                        linestyle=_select(line_styles, i)
+                        if isinstance(line_styles, (list, tuple))
+                        else line_styles,
+                        linewidth=_select(line_widths, i)
+                        if isinstance(line_widths, (list, tuple))
+                        else line_widths,
+                        alpha=alpha,
+                    )
+                self.handle = VerticalLineCollection(
+                    [[(0, 0)]] * (x_len if x_len <= 4 else 4),
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
+                )
         else:
             if self._y_min is not None and self._y_max is not None:
-                params = {
-                    "colors": self._colors,
-                    "linestyles": self._line_styles,
-                    "linewidths": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                axes.vlines(
-                    self._x,
-                    self._y_min,
-                    self._y_max,
-                    zorder=z_order,
-                    **params,
+                assert y_min_values is not None
+                assert y_max_values is not None
+                x_seq = cast(Sequence[float], x_values)
+                ymin_seq = cast(Sequence[float], y_min_values)
+                ymax_seq = cast(Sequence[float], y_max_values)
+                color_single = colors[0] if isinstance(colors, list) else colors
+                linestyle_single = (
+                    line_styles[0] if isinstance(line_styles, list) else line_styles
                 )
-                params.pop("linewidths")
+                linewidth_single = (
+                    line_widths[0] if isinstance(line_widths, list) else line_widths
+                )
+                axes.vlines(
+                    x_seq[0],
+                    ymin_seq[0],
+                    ymax_seq[0],
+                    zorder=z_order,
+                    colors=color_single,
+                    linestyles=linestyle_single,
+                    linewidths=linewidth_single,
+                    alpha=alpha,
+                )
             else:
-                params = {
-                    "color": self._colors,
-                    "linestyle": self._line_styles,
-                    "linewidth": self._line_widths,
-                    "alpha": self._alpha,
-                }
-                params = {k: v for k, v in params.items() if v != "default"}
-                axes.axvline(self._x, zorder=z_order, **params)
-                params.pop("linewidth")
+                color_single = colors[0] if isinstance(colors, list) else colors
+                linestyle_single = (
+                    line_styles[0] if isinstance(line_styles, list) else line_styles
+                )
+                linewidth_single = (
+                    line_widths[0] if isinstance(line_widths, list) else line_widths
+                )
+                axes.axvline(
+                    x_values[0],
+                    zorder=z_order,
+                    color=color_single,
+                    linestyle=linestyle_single,
+                    linewidth=linewidth_single,
+                    alpha=alpha,
+                )
             if isinstance(self._x, (int, float)):
-                self.handle = VerticalLineCollection([[(0, 0)]] * 1, **params)
+                self.handle = VerticalLineCollection(
+                    [[(0, 0)]] * 1,
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
+                )
             else:
                 self.handle = VerticalLineCollection(
-                    [[(0, 0)]] * (len(self._x) if len(self._x) <= 4 else 4),
-                    **params,
+                    [[(0, 0)]] * (x_len if x_len <= 4 else 4),
+                    colors=colors,
+                    linestyles=line_styles,
+                    linewidths=line_widths,
+                    alpha=alpha,
                 )
 
 
@@ -882,28 +1077,31 @@ class Point(Plottable):
             raise GraphingException(
                 "Both the face color and edge color of the point can't be None. Set at least one of them."
             )
+        if isinstance(self._marker_size, str):
+            raise ValueError("Point marker_size is still set to 'default' when plotting.")
+        if isinstance(self._edge_width, str):
+            raise ValueError("Point edge_width is still set to 'default' when plotting.")
+        if isinstance(self._alpha, str):
+            raise ValueError("Point alpha is still set to 'default' when plotting.")
+
         size = self._font_size if self._font_size != "same as figure" else None
         prefix = " " if self._h_align == "left" else ""
         postfix = " " if self._h_align == "right" else ""
-        if self._label is not None and not self._show_coordinates:
-            point_label = prefix + self._label + postfix
-        else:
-            point_label = None
-        params = {
-            "c": self._face_color if self._face_color is not None else "none",
-            "edgecolors": self._edge_color if self._edge_color is not None else "none",
-            "s": self._marker_size,
-            "marker": self._marker_style,
-            "linewidths": self._edge_width,
-            "alpha": self._alpha,
-        }
-        params = {k: v for k, v in params.items() if v != "default"}
-        axes.scatter(
-            self._x,
-            self._y,
-            zorder=z_order,
-            **params,
+        point_label = (
+            prefix + self._label + postfix if self._label is not None and not self._show_coordinates else None
         )
+        face_color = self._face_color if self._face_color is not None else "none"
+        edge_color = self._edge_color if self._edge_color is not None else "none"
+
+        scatter_params: dict[str, Any] = {
+            "c": face_color,
+            "edgecolors": edge_color,
+            "s": float(self._marker_size),
+            "marker": self._marker_style,
+            "linewidths": float(self._edge_width),
+            "alpha": float(self._alpha),
+        }
+        axes.scatter(self._x, self._y, zorder=z_order, **scatter_params)
         # get text color. if _text_color is "same as point", use the color of the point (prioritize edge color, then face color)
         if self._text_color == "same as point":
             if self._edge_color is not None:
@@ -912,19 +1110,15 @@ class Point(Plottable):
                 text_color = self._face_color
         else:
             text_color = self._text_color
-        params = {
+        annotate_params: dict[str, Any] = {
             "color": text_color,
-            "fontsize": size,
             "horizontalalignment": self._h_align,
             "verticalalignment": self._v_align,
         }
-        params = {k: v for k, v in params.items() if v != "default"}
-        axes.annotate(
-            point_label,
-            (self._x, self._y),
-            zorder=z_order,
-            **params,
-        )
+        if size is not None:
+            annotate_params["fontsize"] = size
+        if point_label is not None:
+            axes.annotate(point_label, (self._x, self._y), zorder=z_order, **annotate_params)
         if self._show_coordinates:
             prefix = " " if self._h_align == "left" else ""
             postfix = " " if self._h_align == "right" else ""
@@ -945,13 +1139,13 @@ class Point(Plottable):
                     text_color = self._face_color
             else:
                 text_color = self._text_color
-            params = {
-                "color": text_color,
-                "fontsize": size,
+            params: dict[str, Any] = {
+                "color": text_color if text_color is not None else "black",
                 "horizontalalignment": self._h_align,
                 "verticalalignment": self._v_align,
             }
-            params = {k: v for k, v in params.items() if v != "default"}
+            if size is not None:
+                params["fontsize"] = size
             axes.annotate(
                 point_label,
                 (self._x, self._y),
@@ -1014,7 +1208,7 @@ class Text(Plottable):
     _highlight_color: Optional[str] = None
     _highlight_alpha: float = 1.0
     _highlight_padding: float = 0.1
-    _arrow_pointing_to: Optional[tuple[float]] = field(default=None, init=False)
+    _arrow_pointing_to: Optional[tuple[float, float]] = field(default=None, init=False)
 
     def __init__(
         self,
@@ -1181,11 +1375,11 @@ class Text(Plottable):
         self._highlight_padding = highlight_padding
 
     @property
-    def arrow_pointing_to(self) -> Optional[tuple[float]]:
+    def arrow_pointing_to(self) -> Optional[tuple[float, float]]:
         return self._arrow_pointing_to
 
     @arrow_pointing_to.setter
-    def arrow_pointing_to(self, arrow_pointing_to: Optional[tuple[float]]) -> None:
+    def arrow_pointing_to(self, arrow_pointing_to: Optional[tuple[float, float]]) -> None:
         self._arrow_pointing_to = arrow_pointing_to
 
     def copy(self) -> Self:
@@ -1237,22 +1431,32 @@ class Text(Plottable):
             self._arrow_properties["alpha"] = alpha
 
     def _plot_element(
-        self, target: plt.Axes | MPLFigure, z_order: int, **kwargs
+        self, axes: plt.Axes, z_order: int, **kwargs
     ) -> None:
         """
         Plots the element in the specified target, which can be either an
         `Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html>`_ or a
         `Figure <https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.html>`.
+        Figure type has been omitted in the signature to keep Plottable consistent, but it
+        is still supported.
         """
+        if self._color == "default":
+            raise ValueError("Text color is still set to 'default' when plotting.")
+        if isinstance(self._alpha, str):
+            raise ValueError("Text alpha is still set to 'default' when plotting.")
+        if self._h_align == "default" or self._v_align == "default":
+            raise ValueError("Text alignment is still set to 'default' when plotting.")
+
         size = self._font_size if self._font_size != "same as figure" else None
-        params = {
+        params: dict[str, Any] = {
             "color": self._color,
-            "fontsize": size,
-            "alpha": self._alpha,
+            "alpha": float(self._alpha),
             "horizontalalignment": self._h_align,
             "verticalalignment": self._v_align,
             "rotation": self._rotation,
         }
+        if size is not None:
+            params["fontsize"] = size
 
         # Add highlight/background box if highlight_color is specified
         if self._highlight_color is not None:
@@ -1264,32 +1468,29 @@ class Text(Plottable):
             }
             params["bbox"] = bbox_dict
 
-        params = {k: v for k, v in params.items() if v != "default"}
-        target.text(
+        axes.text(
             self._x,
             self._y,
             self._text,
             zorder=z_order,
             **params,
         )
-        if self._arrow_pointing_to is not None and isinstance(target, plt.Axes):
+        if self._arrow_pointing_to is not None:
             self._arrow_properties["color"] = self._color
-            params = {
+            arrow_params: dict[str, Any] = {
                 "color": self._color,
-                "fontsize": size,
                 "horizontalalignment": self._h_align,
                 "verticalalignment": self._v_align,
+                "arrowprops": self._arrow_properties,
             }
-            params = {k: v for k, v in params.items() if v != "default"}
-            if self._color != "default":
-                self._arrow_properties["color"] = self._color
-                params["arrowprops"] = self._arrow_properties
-            target.annotate(
+            if size is not None:
+                arrow_params["fontsize"] = size
+            axes.annotate(
                 self._text,
                 self._arrow_pointing_to,
                 xytext=(self._x, self._y),
                 zorder=z_order,
-                **params,
+                **arrow_params,
             )
 
 
@@ -1445,19 +1646,19 @@ class Table(Plottable):
         self._location = location
 
     @property
-    def cell_text(self) -> list[str]:
+    def cell_text(self) -> list[str] | None:
         return self._cell_text
 
     @cell_text.setter
-    def cell_text(self, cell_text: list[str]) -> None:
+    def cell_text(self, cell_text: list[str] | None) -> None:
         self._cell_text = cell_text
 
     @property
-    def cell_colors(self) -> ArrayLike | str:
+    def cell_colors(self) -> ArrayLike | str | None:
         return self._cell_colors
 
     @cell_colors.setter
-    def cell_colors(self, cell_colors: list) -> None:
+    def cell_colors(self, cell_colors: list | None) -> None:
         self._cell_colors = cell_colors
 
     @property
@@ -1469,19 +1670,19 @@ class Table(Plottable):
         self._cell_align = cell_align
 
     @property
-    def col_labels(self) -> list[str]:
+    def col_labels(self) -> list[str] | None:
         return self._col_labels
 
     @col_labels.setter
-    def col_labels(self, col_labels: list[str]) -> None:
+    def col_labels(self, col_labels: list[str] | None) -> None:
         self._col_labels = col_labels
 
     @property
-    def col_widths(self) -> list[float]:
+    def col_widths(self) -> list[float] | None:
         return self._col_widths
 
     @col_widths.setter
-    def col_widths(self, col_widths: list[float]) -> None:
+    def col_widths(self, col_widths: list[float] | None) -> None:
         self._col_widths = col_widths
 
     @property
@@ -1493,19 +1694,19 @@ class Table(Plottable):
         self._col_align = col_align
 
     @property
-    def col_colors(self) -> ArrayLike | str:
+    def col_colors(self) -> ArrayLike | str | None:
         return self._col_colors
 
     @col_colors.setter
-    def col_colors(self, col_colors: list) -> None:
+    def col_colors(self, col_colors: list | None) -> None:
         self._col_colors = col_colors
 
     @property
-    def row_labels(self) -> list[str]:
+    def row_labels(self) -> list[str] | None:
         return self._row_labels
 
     @row_labels.setter
-    def row_labels(self, row_labels: list[str]) -> None:
+    def row_labels(self, row_labels: list[str] | None) -> None:
         self._row_labels = row_labels
 
     @property
@@ -1517,19 +1718,19 @@ class Table(Plottable):
         self._row_align = row_align
 
     @property
-    def row_colors(self) -> ArrayLike | str:
+    def row_colors(self) -> ArrayLike | str | None:
         return self._row_colors
 
     @row_colors.setter
-    def row_colors(self, row_colors: list) -> None:
+    def row_colors(self, row_colors: list | None) -> None:
         self._row_colors = row_colors
 
     @property
-    def edge_width(self) -> float:
+    def edge_width(self) -> float | Literal["default"]:
         return self._edge_width
 
     @edge_width.setter
-    def edge_width(self, edge_width: float) -> None:
+    def edge_width(self, edge_width: float | Literal["default"]) -> None:
         self._edge_width = edge_width
         for (i, j), cell in self.handle.get_celld().items():
             cell.set_linewidth(self._edge_width)
@@ -1555,11 +1756,11 @@ class Table(Plottable):
             cell.set_text_props(color=self._text_color)
 
     @property
-    def scaling(self) -> tuple[float]:
+    def scaling(self) -> tuple[float, float]:
         return self._scaling
 
     @scaling.setter
-    def scaling(self, scaling: tuple[float]) -> None:
+    def scaling(self, scaling: tuple[float, float]) -> None:
         self._scaling = scaling
 
     @property
@@ -1581,36 +1782,95 @@ class Table(Plottable):
         Plots the element in the specified
         `Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html>`_.
         """
-        params = {
-            "cellLoc": self._cell_align,
-            "colLoc": self._col_align,
-            "rowLoc": self._row_align,
-        }
-        params = {k: v for k, v in params.items() if v != "default"}
+        if self._cell_text is None:
+            raise ValueError("Table cell_text must be provided before plotting.")
+        cell_array = np.atleast_2d(np.asarray(self._cell_text))
+        cell_text: list[list[str]] = [
+            [str(val) for val in row] for row in cell_array.tolist()
+        ]
+        col_labels = self._col_labels
+        col_widths = self._col_widths
+        col_colors = self._col_colors
+        row_labels = self._row_labels
+        row_colors = self._row_colors
+        if isinstance(self._edge_width, str):
+            raise ValueError("Table edge_width is still set to 'default' when plotting.")
 
-        # Set colors to correct shape if they are strings
-        if isinstance(self._cell_colors, str):
-            self._cell_colors = [[self._cell_colors] * len(self._cell_text[0])] * len(
-                self._cell_text
-            )
-        if isinstance(self._col_colors, str):
-            self._col_colors = [self._col_colors] * len(self._cell_text[0])
-        if isinstance(self._row_colors, str):
-            self._row_colors = [self._row_colors] * len(self._cell_text)
+        if self._cell_align == "default" or self._col_align == "default" or self._row_align == "default":
+            raise ValueError("Table alignment parameters must be resolved before plotting.")
+        if self._cell_colors == "default" or col_colors == "default" or row_colors == "default":
+            raise ValueError("Table colors must be resolved before plotting.")
+        if self._location == "default":
+            raise ValueError("Table location is still set to 'default' when plotting.")
+
+        cell_align = self._cell_align
+        col_align = self._col_align
+        row_align = self._row_align
+
+        def _align(val: str) -> Literal["left", "center", "right"]:
+            if val in ("left", "center", "right"):
+                return cast(Literal["left", "center", "right"], val)
+            raise ValueError(f"Invalid alignment '{val}' for table.")
+
+        cell_loc = _align(cell_align)
+        col_loc = _align(col_align)
+        row_loc = _align(row_align)
+
+        # Set colors to correct shape if they are strings or arrays
+        cell_colours: Sequence[Sequence[str]] | None
+        if self._cell_colors is None or self._cell_colors == "default":
+            cell_colours = None
+        elif isinstance(self._cell_colors, str):
+            cell_colours = [[self._cell_colors] * len(cell_text[0])] * len(cell_text)
+        else:
+            cell_colours = np.atleast_2d(np.asarray(self._cell_colors)).tolist()
+
+        if col_colors == "default":
+            col_colors = None
+        col_colours: Sequence[str] | None
+        if isinstance(col_colors, np.ndarray):
+            col_colours = [str(c) for c in np.atleast_1d(col_colors).tolist()]
+        elif isinstance(col_colors, list):
+            col_colours = [str(c) for c in col_colors]
+        elif isinstance(col_colors, str):
+            col_colours = [col_colors] * len(cell_text[0])
+        else:
+            col_colours = None
+
+        if row_colors == "default":
+            row_colors = None
+        row_colours: Sequence[str] | None
+        if isinstance(row_colors, np.ndarray):
+            row_colours = [str(c) for c in np.atleast_1d(row_colors).tolist()]
+        elif isinstance(row_colors, list):
+            row_colours = [str(c) for c in row_colors]
+        elif isinstance(row_colors, str):
+            row_colours = [row_colors] * len(cell_text)
+        else:
+            row_colours = None
+
+        if self._location == "default":
+            raise ValueError("Table location is still set to 'default' when plotting.")
+
+        loc_value = cast(str, self._location)
 
         self.handle = axes.table(
-            cellText=self._cell_text,
-            cellColours=self._cell_colors,
-            colLabels=self._col_labels,
-            colWidths=self._col_widths,
-            colColours=self._col_colors,
-            rowLabels=self._row_labels,
-            rowColours=self._row_colors,
-            loc=self._location,
+            cellText=cell_text,
+            cellColours=cell_colours,
+            colLabels=col_labels,
+            colWidths=col_widths,
+            colColours=col_colours,
+            rowLabels=row_labels,
+            rowColours=row_colours,
+            cellLoc=cell_loc,
+            colLoc=col_loc,
+            rowLoc=row_loc,
+            loc=loc_value,
             zorder=z_order,
-            **params,
         )
         self.handle.auto_set_font_size(False)
+        if len(self._scaling) < 2:
+            raise ValueError("Table scaling must be a tuple of length 2.")
         self.handle.scale(self._scaling[0], self._scaling[1])
         for (i, j), cell in self.handle.get_celld().items():
             cell.set_text_props(color=self._text_color)
