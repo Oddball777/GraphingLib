@@ -1,6 +1,8 @@
 from shutil import which
 from string import ascii_lowercase
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
+
+from cycler import Cycler
 
 import matplotlib.pyplot as plt
 from matplotlib import rcParamsDefault
@@ -24,6 +26,15 @@ try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
+
+RcParamValue = str | float | int | bool | Cycler | list[str]
+
+
+class _PlacedFigure(Figure):
+    _row_start: int
+    _col_start: int
+    _row_span: int
+    _col_span: int
 
 
 class MultiFigure:
@@ -121,7 +132,7 @@ class MultiFigure:
         self._reflabel_loc = reflabel_loc
         self._figure_style = figure_style
         self._size = size
-        self._sub_figures = []
+        self._sub_figures: list[_PlacedFigure] = []
         self._rc_dict = {}
         self._user_rc_dict = {}
 
@@ -369,13 +380,14 @@ class MultiFigure:
         ):
             raise ValueError(
                 "The placement values and span values must be inside the size of the MultiFigure."
-            )
+        )
         # Add location and span to the SubFigure (create new attributes)
-        figure._row_start = row_start
-        figure._col_start = col_start
-        figure._row_span = row_span
-        figure._col_span = col_span
-        self._sub_figures.append(figure)
+        placed_figure = cast(_PlacedFigure, figure)
+        placed_figure._row_start = row_start
+        placed_figure._col_start = col_start
+        placed_figure._row_span = row_span
+        placed_figure._col_span = col_span
+        self._sub_figures.append(placed_figure)
 
     def show(
         self,
@@ -455,7 +467,7 @@ class MultiFigure:
     def _prepare_multi_figure(
         self,
         general_legend: bool = False,
-        legend_loc: str = "outside lower center",
+        legend_loc: str | tuple = "outside lower center",
         legend_cols: int = 1,
     ) -> None:
         """
@@ -542,13 +554,14 @@ class MultiFigure:
                     ncols=legend_cols,
                 )
                 _legend.set_zorder(10000)
-        self._figure.suptitle(self._title)
+        if self._title is not None:
+            self._figure.suptitle(self._title)
         self._reset_params_to_default(self, multi_figure_params_to_reset)
         self._rc_dict = {}
 
     def _prepare_sub_figure(
         self,
-        sub_figure: Figure,
+        sub_figure: _PlacedFigure,
         grid: GridSpec,
         transformation: ScaledTranslation,
         reference_label: str,
@@ -585,7 +598,7 @@ class MultiFigure:
         )
         return labels, handles
 
-    def _fill_in_missing_params(self, element: Plottable) -> list[str]:
+    def _fill_in_missing_params(self, element: Plottable | Self) -> list[str]:
         """
         Fills in the missing parameters from the specified ``figure_style``.
         """
@@ -615,7 +628,7 @@ class MultiFigure:
         return params_to_reset
 
     def _reset_params_to_default(
-        self, element: Plottable, params_to_reset: list[str]
+        self, element: Plottable | Self, params_to_reset: list[str]
     ) -> None:
         """
         Resets the parameters that were set to default in the _fill_in_missing_params method.
@@ -654,7 +667,7 @@ class MultiFigure:
 
     def set_rc_params(
         self,
-        rc_params_dict: dict[str, str | float] = {},
+        rc_params_dict: dict[str, RcParamValue] = {},
         reset: bool = False,
     ) -> None:
         """
@@ -767,8 +780,9 @@ class MultiFigure:
             The alpha of the grid lines.
             Defaults to ``None``.
         """
+        cycle: Cycler | None = None
         if color_cycle is not None:
-            color_cycle = plt.cycler(color=color_cycle)
+            cycle = plt.cycler(color=color_cycle)
 
         rc_params_dict = {
             "figure.facecolor": figure_face_color,
@@ -776,7 +790,7 @@ class MultiFigure:
             "axes.edgecolor": axes_edge_color,
             "axes.labelcolor": axes_label_color,
             "axes.linewidth": axes_line_width,
-            "axes.prop_cycle": color_cycle,
+            "axes.prop_cycle": cycle,
             "xtick.color": x_tick_color,
             "ytick.color": y_tick_color,
             "legend.facecolor": legend_face_color,
