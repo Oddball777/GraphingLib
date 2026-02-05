@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Callable, Literal, Optional, Protocol, runtime_checkable
+from typing import Callable, Literal, Optional, Protocol, cast, runtime_checkable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -121,8 +121,8 @@ class Heatmap(Plottable2D):
                 `Interpolations for imshow <https://matplotlib.org/stable/gallery/images_contours_and_fields/interpolation_methods.html>`_.
         """
         self._image = image
-        self._x_axis_range = x_axis_range
-        self._y_axis_range = y_axis_range
+        self._x_axis_range: Optional[tuple[float, float]] = x_axis_range
+        self._y_axis_range: Optional[tuple[float, float]] = y_axis_range
         self._color_map = color_map
         self._color_map_range = color_map_range
         self._show_color_bar = show_color_bar
@@ -342,7 +342,7 @@ class Heatmap(Plottable2D):
         self._color_map = color_map
 
     @property
-    def color_map_range(self) -> tuple[float, float]:
+    def color_map_range(self) -> Optional[tuple[float, float]]:
         return self._color_map_range
 
     @color_map_range.setter
@@ -350,7 +350,7 @@ class Heatmap(Plottable2D):
         self._color_map_range = color_map_range
 
     @property
-    def show_color_bar(self) -> bool:
+    def show_color_bar(self) -> bool | Literal["default"]:
         return self._show_color_bar
 
     @show_color_bar.setter
@@ -395,8 +395,15 @@ class Heatmap(Plottable2D):
 
     @property
     def _xy_range(self) -> Optional[tuple[float, float, float, float]]:
-        if self._x_axis_range is not None and self._y_axis_range is not None:
-            return self._x_axis_range + self._y_axis_range
+        x_range = self._x_axis_range
+        y_range = self._y_axis_range
+        if x_range is not None and y_range is not None:
+            return (
+                float(x_range[0]),
+                float(x_range[1]),
+                float(y_range[0]),
+                float(y_range[1]),
+            )
         return None
 
     def copy(self) -> Self:
@@ -438,26 +445,71 @@ class Heatmap(Plottable2D):
         Plots the element in the specified
         `Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html>`_.
         """
-        params = {
-            "cmap": self._color_map,
-            "alpha": self._alpha,
-            "aspect": self._aspect_ratio,
-            "origin": self._origin_position,
-            "interpolation": self._interpolation,
-            "extent": self._xy_range,
-        }
+        cmap_value = cast(str | Colormap, self._color_map)
+        if isinstance(cmap_value, str) and cmap_value == "default":
+            raise ValueError(
+                "Heatmap color_map is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        cmap: str | Colormap | None = cmap_value
 
-        params = {k: v for k, v in params.items() if v != "default"}
-        if self._color_map_range:
-            params["vmin"] = min(self._color_map_range)
-            params["vmax"] = max(self._color_map_range)
+        aspect_value = cast(str | float, self._aspect_ratio)
+        if isinstance(aspect_value, str):
+            if aspect_value == "default":
+                raise ValueError(
+                    "Heatmap aspect_ratio is still set to 'default' when plotting; resolve style parameters before rendering."
+                )
+            elif aspect_value in ("equal", "auto"):
+                aspect = cast(Literal["equal", "auto"], aspect_value)
+            else:
+                raise ValueError(
+                    "aspect_ratio must be 'equal', 'auto', a float, or 'default'."
+                )
+        else:
+            aspect = aspect_value
+
+        origin_value = cast(str, self._origin_position)
+        if isinstance(origin_value, str):
+            if origin_value == "default":
+                raise ValueError(
+                    "Heatmap origin_position is still set to 'default' when plotting; resolve style parameters before rendering."
+                )
+            elif origin_value in ("upper", "lower"):
+                origin = cast(Literal["upper", "lower"], origin_value)
+            else:
+                raise ValueError(
+                    "origin_position must be 'upper', 'lower', or 'default'."
+                )
+        else:
+            origin = origin_value
+
+        interpolation_value = self._interpolation
+        if interpolation_value == "default":
+            raise ValueError(
+                "Heatmap interpolation is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        interpolation: str | None = interpolation_value
+
+        vmin: float | None = None
+        vmax: float | None = None
+        if self._color_map_range is not None:
+            vmin = float(min(self._color_map_range))
+            vmax = float(max(self._color_map_range))
 
         image = axes.imshow(
             self._image,
             zorder=z_order,
-            **params,
+            cmap=cmap,
+            alpha=self._alpha,
+            aspect=aspect,
+            origin=origin,
+            interpolation=interpolation,
+            extent=self._xy_range,
+            vmin=vmin,
+            vmax=vmax,
         )
         fig = axes.get_figure()
+        if fig is None:
+            raise ValueError("axes.get_figure() returned None; cannot add colorbar.")
         if self._show_color_bar:
             fig.colorbar(image, ax=axes, **self._color_bar_params)
 
@@ -643,19 +695,19 @@ class VectorField(Plottable2D):
         self._v_data = np.asarray(v_data)
 
     @property
-    def arrow_width(self) -> float:
+    def arrow_width(self) -> float | Literal["default"]:
         return self._arrow_width
 
     @arrow_width.setter
-    def arrow_width(self, arrow_width: float) -> None:
+    def arrow_width(self, arrow_width: float | Literal["default"]) -> None:
         self._arrow_width = arrow_width
 
     @property
-    def arrow_head_size(self) -> float:
+    def arrow_head_size(self) -> float | Literal["default"]:
         return self._arrow_head_size
 
     @arrow_head_size.setter
-    def arrow_head_size(self, arrow_head_size: float) -> None:
+    def arrow_head_size(self, arrow_head_size: float | Literal["default"]) -> None:
         self._arrow_head_size = arrow_head_size
 
     @property
@@ -697,13 +749,29 @@ class VectorField(Plottable2D):
             angle = "uv"
         else:
             angle = "xy"
+        arrow_width = self._arrow_width
+        if isinstance(arrow_width, str):
+            raise ValueError(
+                "Arrow width is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        arrow_head_size = self._arrow_head_size
+        if isinstance(arrow_head_size, str):
+            raise ValueError(
+                "Arrow head size is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        color_value = self._color
+        if isinstance(color_value, str) and color_value == "default":
+            raise ValueError(
+                "VectorField color is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        color = color_value
         params = {
             "angles": angle,
-            "width": 0.005 * self._arrow_width,
-            "headwidth": 4 * self._arrow_head_size / self._arrow_width,
-            "headlength": 4 * self._arrow_head_size / self._arrow_width,
-            "headaxislength": 4 * self._arrow_head_size / self._arrow_width,
-            "color": self._color,
+            "width": 0.005 * arrow_width,
+            "headwidth": 4 * arrow_head_size / arrow_width,
+            "headlength": 4 * arrow_head_size / arrow_width,
+            "headaxislength": 4 * arrow_head_size / arrow_width,
+            "color": color,
             "scale": 1 / self._scale if self._scale is not None else None,
             "scale_units": "xy",
         }
@@ -900,11 +968,11 @@ class Contour(Plottable2D):
         self._z_data = np.asarray(z_data)
 
     @property
-    def number_of_levels(self) -> int:
+    def number_of_levels(self) -> int | Literal["default"]:
         return self._number_of_levels
 
     @number_of_levels.setter
-    def number_of_levels(self, number_of_levels: int) -> None:
+    def number_of_levels(self, number_of_levels: int | Literal["default"]) -> None:
         self._number_of_levels = number_of_levels
 
     @property
@@ -916,35 +984,35 @@ class Contour(Plottable2D):
         self._color_map = color_map
 
     @property
-    def color_map_range(self) -> tuple[float, float]:
+    def color_map_range(self) -> Optional[tuple[float, float]]:
         return self._color_map_range
 
     @color_map_range.setter
-    def color_map_range(self, color_map_range: tuple[float, float]) -> None:
+    def color_map_range(self, color_map_range: Optional[tuple[float, float]]) -> None:
         self._color_map_range = color_map_range
 
     @property
-    def show_color_bar(self) -> bool:
+    def show_color_bar(self) -> bool | Literal["default"]:
         return self._show_color_bar
 
     @show_color_bar.setter
-    def show_color_bar(self, show_color_bar: bool) -> None:
+    def show_color_bar(self, show_color_bar: bool | Literal["default"]) -> None:
         self._show_color_bar = show_color_bar
 
     @property
-    def filled(self) -> bool:
+    def filled(self) -> bool | Literal["default"]:
         return self._filled
 
     @filled.setter
-    def filled(self, filled: bool) -> None:
+    def filled(self, filled: bool | Literal["default"]) -> None:
         self._filled = filled
 
     @property
-    def alpha(self) -> float:
+    def alpha(self) -> float | Literal["default"]:
         return self._alpha
 
     @alpha.setter
-    def alpha(self, alpha: float) -> None:
+    def alpha(self, alpha: float | Literal["default"]) -> None:
         self._alpha = alpha
 
     @property
@@ -990,34 +1058,71 @@ class Contour(Plottable2D):
         Plots the element in the specified
         `Axes <https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.html>`_.
         """
-        params = {
-            "levels": self._number_of_levels,
-            "cmap": self._color_map,
-            "alpha": self._alpha,
-        }
-        params = {k: v for k, v in params.items() if v != "default"}
-        if self._color_map_range:
-            params["levels"] = np.linspace(
-                *self._color_map_range, self._number_of_levels
+        number_of_levels = self._number_of_levels
+        if isinstance(number_of_levels, str):
+            raise ValueError(
+                "Contour number_of_levels is still set to 'default' when plotting; resolve style parameters before rendering."
             )
-        if self._filled:
+
+        alpha = self._alpha
+        if isinstance(alpha, str):
+            raise ValueError(
+                "Contour alpha is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+
+        cmap_value = self._color_map
+        if isinstance(cmap_value, str) and cmap_value == "default":
+            raise ValueError(
+                "Contour color_map is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        cmap: str | Colormap | None = cmap_value
+
+        filled = self._filled
+        if isinstance(filled, str):
+            raise ValueError(
+                "Contour filled flag is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+
+        if self._color_map_range is not None:
+            levels = np.linspace(
+                float(self._color_map_range[0]),
+                float(self._color_map_range[1]),
+                number_of_levels,
+            )
+        else:
+            levels = number_of_levels
+
+        if filled:
             cont = axes.contourf(
                 self._x_mesh,
                 self._y_mesh,
                 self._z_data,
+                levels=levels,
+                cmap=cmap,
+                alpha=alpha,
                 zorder=z_order,
-                **params,
             )
         else:
             cont = axes.contour(
                 self._x_mesh,
                 self._y_mesh,
                 self._z_data,
+                levels=levels,
+                cmap=cmap,
+                alpha=alpha,
                 zorder=z_order,
-                **params,
             )
-        if self._show_color_bar:
+        show_color_bar = self._show_color_bar
+        if isinstance(show_color_bar, str):
+            raise ValueError(
+                "Contour show_color_bar is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        if show_color_bar:
             fig = axes.get_figure()
+            if fig is None:
+                raise ValueError(
+                    "axes.get_figure() returned None; cannot add colorbar to contour."
+                )
             fig.colorbar(cont, ax=axes, **self._color_bar_params)
 
 
@@ -1154,23 +1259,72 @@ class Stream(Plottable2D):
         """
         Plots the element in the specified Axes.
         """
-        params = {
-            "density": self._density,
-            "linewidth": self._line_width,
-            "cmap": self._color_map,
-            "arrowsize": self._arrow_size,
-        }
-        params = {k: v for k, v in params.items() if v != "default"}
-        if isinstance(self._color, str) and self._color == "default":
-            pass
-        else:
-            params["color"] = self._color
+        density = self._density
 
-        axes.streamplot(
-            x=self._x_data,
-            y=self._y_data,
-            u=self._u_data,
-            v=self._v_data,
-            zorder=z_order,
-            **params,
-        )
+        line_width_value = self._line_width
+        if isinstance(line_width_value, str):
+            if line_width_value == "default":
+                raise ValueError(
+                    "Stream line_width is still set to 'default' when plotting; resolve style parameters before rendering."
+                )
+            else:
+                raise ValueError(
+                    "Stream line_width is still set to an unexpected string; resolve style parameters before rendering."
+                )
+        else:
+            linewidth = line_width_value
+
+        color_value = self._color
+        if isinstance(color_value, str) and color_value == "default":
+            raise ValueError(
+                "Stream color is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        else:
+            color = color_value
+
+        cmap_value = self._color_map
+        if isinstance(cmap_value, str) and cmap_value == "default":
+            raise ValueError(
+                "Stream color_map is still set to 'default' when plotting; resolve style parameters before rendering."
+            )
+        else:
+            cmap = cmap_value
+
+        arrow_size_value = self._arrow_size
+        if isinstance(arrow_size_value, str):
+            if arrow_size_value == "default":
+                raise ValueError(
+                    "Stream arrow_size is still set to 'default' when plotting; resolve style parameters before rendering."
+                )
+            else:
+                raise ValueError(
+                    "Stream arrow_size is still set to an unexpected string; resolve style parameters before rendering."
+                )
+        else:
+            arrowsize = arrow_size_value
+
+        if arrowsize is not None:
+            axes.streamplot(
+                x=self._x_data,
+                y=self._y_data,
+                u=self._u_data,
+                v=self._v_data,
+                arrowsize=arrowsize,
+                density=density,
+                linewidth=linewidth,
+                color=color,
+                cmap=cmap,
+                zorder=z_order,
+            )
+        else:
+            axes.streamplot(
+                x=self._x_data,
+                y=self._y_data,
+                u=self._u_data,
+                v=self._v_data,
+                density=density,
+                linewidth=linewidth,
+                color=color,
+                cmap=cmap,
+                zorder=z_order,
+            )
