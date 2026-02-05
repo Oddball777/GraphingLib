@@ -152,7 +152,10 @@ class GeneralFit(Curve):
             y = self._function(x)
         else:
             y = interp1d(
-                self._x_data, self._y_data, kind=interpolation_method, fill_value="extrapolate"
+                self._x_data,
+                self._y_data,
+                kind=interpolation_method,
+                fill_value="extrapolate",
             )(x)
         return (x, float(np.asarray(y)))
 
@@ -318,9 +321,7 @@ class GeneralFit(Curve):
                 "linestyle": self._res_line_style,
                 "alpha": self._alpha,
             }
-            params = {
-                key: value for key, value in params.items() if value != "default"
-            }
+            params = {key: value for key, value in params.items() if value != "default"}
             axes.plot(
                 self._x_data,
                 y_fit_minus_std,

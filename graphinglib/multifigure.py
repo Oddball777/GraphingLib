@@ -380,7 +380,7 @@ class MultiFigure:
         ):
             raise ValueError(
                 "The placement values and span values must be inside the size of the MultiFigure."
-        )
+            )
         # Add location and span to the SubFigure (create new attributes)
         placed_figure = cast(_PlacedFigure, figure)
         placed_figure._row_start = row_start
