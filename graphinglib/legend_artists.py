@@ -250,7 +250,10 @@ class LegendLine(LegendElement):
     _color: ColorType
     _gap_color: ColorType | None
     _line_width: float
-    _line_style: Literal["-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"] | tuple[float, Sequence]
+    _line_style: (
+        Literal["-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"]
+        | tuple[float, Sequence]
+    )
     _alpha: float
 
     def __init__(
@@ -529,7 +532,10 @@ class LegendPatch(LegendElement):
     _face_color: ColorType | None
     _edge_color: ColorType | None
     _line_width: float
-    _line_style: Literal["-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"] | tuple[float, Sequence]
+    _line_style: (
+        Literal["-", "--", "-.", ":", "solid", "dashed", "dashdot", "dotted"]
+        | tuple[float, Sequence]
+    )
     _hatch: Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None
     _alpha: float
 
@@ -612,7 +618,9 @@ class LegendPatch(LegendElement):
         self._line_style_setter("line_style", value)
 
     @property
-    def hatch(self) -> Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None:
+    def hatch(
+        self,
+    ) -> Literal["/", "\\", "|", "-", "+", "x", "o", "O", ".", "*"] | None:
         return self._hatch
 
     @hatch.setter
