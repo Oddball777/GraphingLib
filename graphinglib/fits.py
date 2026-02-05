@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import inspect
 from copy import deepcopy
 from functools import partial
-from typing import Callable, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 from numpy.typing import ArrayLike
 from scipy.optimize import curve_fit
@@ -290,33 +292,35 @@ class GeneralFit(Curve):
         Plots the element in the specified
         Axes
         """
-        params = {
+        params: dict[str, Any] = {
             "color": self._color,
             "linewidth": self._line_width,
             "linestyle": self._line_style,
             "alpha": self._alpha,
         }
         params = {key: value for key, value in params.items() if value != "default"}
-        (self.handle,) = axes.plot(
+        self.handle: Line2D = axes.plot(
             self._x_data,
             self._y_data,
             label=self._label,
             zorder=z_order,
             **params,
-        )
+        )[0]
         if self._res_curves_to_be_plotted:
             y_fit = self._y_data
             residuals = self.get_residuals()
             std = np.std(residuals)
             y_fit_plus_std = y_fit + (self._res_sigma_multiplier * std)
             y_fit_minus_std = y_fit - (self._res_sigma_multiplier * std)
-            params = {
+            params: dict[str, Any] = {
                 "color": self._res_color,
                 "linewidth": self._res_line_width,
                 "linestyle": self._res_line_style,
                 "alpha": self._alpha,
             }
-            params = {key: value for key, value in params.items() if value != "default"}
+            params = {
+                key: value for key, value in params.items() if value != "default"
+            }
             axes.plot(
                 self._x_data,
                 y_fit_minus_std,
@@ -330,19 +334,20 @@ class GeneralFit(Curve):
                 **params,
             )
         if self._fill_between_bounds:
-            kwargs = {"alpha": 0.2}
+            kwargs: dict[str, Any] = {"alpha": 0.2}
             if self._fill_between_color:
                 kwargs["color"] = self._fill_between_color
             else:
-                kwargs["color"] = self.handle[0].get_color()
+                kwargs["color"] = self.handle.get_color()
             params = {key: value for key, value in kwargs.items() if value != "default"}
+            where_mask = np.logical_and(
+                self._x_data >= self._fill_between_bounds[0],
+                self._x_data <= self._fill_between_bounds[1],
+            ).tolist()
             axes.fill_between(
                 self._x_data,
                 self._y_data,
-                where=np.logical_and(
-                    self._x_data >= self._fill_between_bounds[0],
-                    self._x_data <= self._fill_between_bounds[1],
-                ),
+                where=where_mask,
                 zorder=z_order - 2,
                 **params,
             )
@@ -1792,12 +1797,9 @@ class FitFromFunction(GeneralFit):
         function : Callable
             Function with the parameters of the fit.
         """
-        argument_names = self._function_template.__code__.co_varnames[
-            : self._function_template.__code__.co_argcount
-        ][1:]
-        args_dict = {
-            argument_names[i]: self._parameters[i] for i in range(len(argument_names))
-        }
+        signature = inspect.signature(self._function_template)
+        argument_names = list(signature.parameters.keys())[1:]
+        args_dict = {name: self._parameters[i] for i, name in enumerate(argument_names)}
         return partial(self._function_template, **args_dict)
 
 
