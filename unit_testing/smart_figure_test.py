@@ -1,6 +1,7 @@
 import os
 import unittest
 import warnings
+from unittest.mock import patch
 
 from matplotlib import use as matplotlib_use
 
@@ -1207,6 +1208,72 @@ class TestSmartFigure(unittest.TestCase):
             self.assertTrue(any("File extension" in record for record in log.output))
         self.assertTrue(os.path.exists("figure.pdf"))
         os.remove("figure.pdf")
+
+    @patch("graphinglib.smart_figure.FuncAnimation")
+    def test_save_animation(self, mock_func_animation):
+        """Test saving an animation."""
+        self.fig.add_elements(DummyPlottable())
+
+        returned = self.fig.save_animation(
+            "test_animation.gif",
+            update_function=lambda i: i,
+            number_of_frames=10,
+            interval=50,
+            dpi=120,
+            fps=24,
+            writer="pillow",
+            transparent=True,
+        )
+
+        self.assertIs(returned, self.fig)
+        self.assertEqual(mock_func_animation.call_count, 1)
+        self.assertEqual(mock_func_animation.call_args.kwargs["frames"], 10)
+        self.assertEqual(mock_func_animation.call_args.kwargs["interval"], 50)
+
+        mock_func_animation.return_value.save.assert_called_once_with(
+            "test_animation.gif",
+            writer="pillow",
+            fps=24,
+            dpi=120,
+            savefig_kwargs={"transparent": True},
+        )
+        self.assertIsNone(self.fig._figure)
+        self.assertIsNone(self.fig._gridspec)
+        self.assertIsNone(self.fig._animation)
+
+    @patch("graphinglib.smart_figure.FuncAnimation")
+    def test_save_animation_infers_fps_from_interval(self, mock_func_animation):
+        """Test animation save FPS inference from interval."""
+        self.fig.add_elements(DummyPlottable())
+
+        self.fig.save_animation(
+            "test_animation.gif",
+            update_function=lambda i: i,
+            number_of_frames=5,
+            interval=40,
+        )
+
+        self.assertEqual(mock_func_animation.call_count, 1)
+        self.assertEqual(mock_func_animation.call_args.kwargs["interval"], 40)
+        self.assertEqual(
+            mock_func_animation.return_value.save.call_args.kwargs["fps"], 25
+        )
+
+    def test_save_animation_validation(self):
+        """Test save_animation callback validation."""
+        with self.assertRaises(TypeError):
+            self.fig.save_animation(
+                "test_animation.gif",
+                update_function=123,  # type: ignore[arg-type]
+                number_of_frames=5,
+            )
+
+        with self.assertRaises(GraphingException):
+            self.fig.save_animation(
+                "test_animation.gif",
+                update_function=lambda: None,  # type: ignore[call-arg]
+                number_of_frames=5,
+            )
 
     def test_auto_assign_default_params(self):
         """Test automatic assignment of default parameters."""

@@ -2,10 +2,12 @@ from __future__ import annotations as _annotations_
 
 from collections import OrderedDict
 from copy import deepcopy
+from inspect import signature
 from logging import warning
 from shutil import which
 from string import ascii_lowercase
-from typing import Any, Callable, Iterable, Iterator, Literal, Self, TypeVar, Union
+from typing import (Any, Callable, Iterable, Iterator, Literal, Self, TypeVar,
+                    Union)
 
 try:  # Optional dependency: astropy
     from astropy.units import Quantity
@@ -19,6 +21,7 @@ except ImportError:
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib.animation import FuncAnimation
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.collections import LineCollection
@@ -29,15 +32,12 @@ from matplotlib.projections import get_projection_names
 from matplotlib.transforms import ScaledTranslation
 from numpy.typing import ArrayLike
 
-from .file_manager import FileLoader, FileUpdater, get_default_style, get_styles
+from .file_manager import (FileLoader, FileUpdater, get_default_style,
+                           get_styles)
 from .graph_elements import GraphingException, Plottable, Text
-from .legend_artists import (
-    HandlerMultipleLines,
-    HandlerMultipleVerticalLines,
-    LegendElement,
-    VerticalLineCollection,
-    histogram_legend_artist,
-)
+from .legend_artists import (HandlerMultipleLines,
+                             HandlerMultipleVerticalLines, LegendElement,
+                             VerticalLineCollection, histogram_legend_artist)
 from .tools import _copy_with_overrides
 
 T = TypeVar("T")
@@ -332,6 +332,7 @@ class SmartFigure:
         self._figure = None
         self._gridspec = None
         self._reference_label_i = None
+        self._animation = None
 
         self._ticks = {}
         self._tick_params = {"x major": {}, "y major": {}, "x minor": {}, "y minor": {}}
@@ -1486,6 +1487,134 @@ class SmartFigure:
         self._figure = None
         self._gridspec = None
         return self
+
+    def show_animation(
+        self,
+        update_function: Callable[[int], Any],
+        number_of_frames: int,
+        interval: int = 100,
+    ) -> Self:
+        """
+        Animates and displays the :class:`~graphinglib.SmartFigure`.
+
+        Parameters
+        ----------
+        update_function : callable
+            Function called on each frame. It must take the frame number as an argument.
+        number_of_frames : int
+            The number of frames in the animation.
+        interval : int
+            The time between each frame in milliseconds.
+            Defaults to ``100``.
+
+        Returns
+        -------
+        Self
+            The same SmartFigure instance, allowing for method chaining.
+        """
+        self._validate_animation_update_function(update_function)
+
+        self._initialize_parent_smart_figure()
+
+        self._animation = FuncAnimation(
+            self._figure,
+            update_function,
+            frames=number_of_frames,
+            interval=interval,
+        )
+
+        plt.show()
+        if not any(
+            plt.fignum_exists(num) for num in plt.get_fignums()
+        ):  # check if the parameters can be reset
+            plt.rcParams.update(plt.rcParamsDefault)
+            self._figure = None
+            self._gridspec = None
+        return self
+
+    def save_animation(
+        self,
+        file_name: str,
+        update_function: Callable[[int], Any],
+        number_of_frames: int,
+        interval: int = 100,
+        dpi: int | None = None,
+        fps: float | None = None,
+        writer: str | None = None,
+        transparent: bool = False,
+    ) -> Self:
+        """
+        Animates the :class:`~graphinglib.SmartFigure` and saves it to a file.
+
+        Parameters
+        ----------
+        file_name : str
+            The output file path (for example, ``.gif`` or ``.mp4``).
+        update_function : callable
+            Function called on each frame. It must take the frame number as an argument.
+        number_of_frames : int
+            The number of frames in the animation.
+        interval : int
+            The time between each frame in milliseconds.
+            Defaults to ``100``.
+        dpi : int, optional
+            Resolution used when rendering frames. If None, the figure DPI is used.
+        fps : float, optional
+            Frames per second for the saved animation. If None, this is inferred from ``interval``.
+        writer : str, optional
+            Matplotlib animation writer backend to use (for example, ``"pillow"`` or ``"ffmpeg"``).
+        transparent : bool, optional
+            Whether to save with transparent background.
+            Defaults to ``False``.
+
+        Returns
+        -------
+        Self
+            The same SmartFigure instance, allowing for method chaining.
+        """
+        self._validate_animation_update_function(update_function)
+
+        self._initialize_parent_smart_figure()
+
+        self._animation = FuncAnimation(
+            self._figure,
+            update_function,
+            frames=number_of_frames,
+            interval=interval,
+        )
+
+        save_fps = (
+            fps if fps is not None else (1000 / interval if interval > 0 else None)
+        )
+        try:
+            self._animation.save(
+                file_name,
+                writer=writer,
+                fps=save_fps,
+                dpi=dpi,
+                savefig_kwargs={"transparent": transparent},
+            )
+        finally:
+            plt.close()
+            plt.rcParams.update(plt.rcParamsDefault)
+            self._figure = None
+            self._gridspec = None
+            self._animation = None
+        return self
+
+    @staticmethod
+    def _validate_animation_update_function(
+        update_function: Callable[[int], Any],
+    ) -> None:
+        if not callable(update_function):
+            raise TypeError("The update function must be callable.")
+
+        try:
+            signature(update_function).bind(0)
+        except TypeError as exc:
+            raise GraphingException(
+                "The update function must take an integer argument representing the frame number."
+            ) from exc
 
     def _initialize_parent_smart_figure(
         self,
